@@ -1,0 +1,36 @@
+plugins {
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+group = 'dev.superdisc'
+version = '1.0.0'
+base { archivesName = 'super-disc-forge-1.20.1' }
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+jarJar.enable()
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+    copyIdeResources = true
+    runs {
+        client {
+            workingDirectory project.file('run')
+            mods { super_disc { source sourceSets.main } }
+        }
+        server {
+            workingDirectory project.file('run-server')
+            args '--nogui'
+            mods { super_disc { source sourceSets.main } }
+        }
+    }
+}
+repositories { mavenCentral() }
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.2.0'
+    implementation 'javazoom:jlayer:1.0.1'
+    jarJar('javazoom:jlayer:[1.0.1,1.0.2)')
+}
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+tasks.named('jar').configure { finalizedBy 'reobfJar' }
+tasks.named('jarJar').configure { finalizedBy 'reobfJarJar' }

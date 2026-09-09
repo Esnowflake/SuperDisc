@@ -1,0 +1,20 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="All Rights Reserved"
+[[mods]]
+modId="super_disc"
+version="1.0.0"
+displayName="Super Disc / 超级唱片"
+description='''A golden disc that plays shared MP3 and Ogg Vorbis audio through vanilla jukeboxes.'''
+[[dependencies.super_disc]]
+modId="forge"
+mandatory=true
+versionRange="[47.2,)"
+ordering="NONE"
+side="BOTH"
+[[dependencies.super_disc]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.20.2)"
+ordering="NONE"
+side="BOTH"
