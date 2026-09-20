@@ -31,10 +31,11 @@ public final class DiscSound extends AbstractTickableSoundInstance {
     private volatile boolean valid=true;
     private volatile boolean drained;
     private volatile float targetVolume;
-    public DiscSound(Track track,AudioDecoder.Prepared pcm,double position) {
+    private volatile float requestedVolume;
+    public DiscSound(Track track,AudioDecoder.Prepared pcm,double position,float initialVolume) {
         super(net.minecraft.sounds.SoundEvent.createVariableRangeEvent(new ResourceLocation(SuperDisc.ID,"audio")),SoundSource.RECORDS,RandomSource.create());
         this.track=track;this.pcm=pcm;startPosition=position;actual=position;
-        x=track.pos.getX()+.5;y=track.pos.getY()+.5;z=track.pos.getZ()+.5;gain(track.volume);volume=targetVolume;pitch=1;looping=false;relative=false;attenuation=Attenuation.LINEAR;
+        x=track.pos.getX()+.5;y=track.pos.getY()+.5;z=track.pos.getZ()+.5;gain(initialVolume);volume=targetVolume;pitch=1;looping=false;relative=false;attenuation=Attenuation.LINEAR;
     }
     @Override public WeighedSoundEvents resolve(SoundManager manager) {
         // Dynamic PCM stream: resolve a real Sound instead of EMPTY_SOUND, no resource-pack sound lookup.
@@ -46,7 +47,7 @@ public final class DiscSound extends AbstractTickableSoundInstance {
     }
     @Override public boolean canStartSilent(){return true;}
     @Override public void tick(){volume+=Math.max(-.1f,Math.min(.1f,targetVolume-volume));}
-    public void gain(float value){targetVolume=PcmGain.sourceGain(value,pcm.boost());}
+    public void gain(float value){requestedVolume=value;targetVolume=value>0?1:0;}
     public void finish(){valid=false;stop();Minecraft.getInstance().getSoundManager().stop(this);}
     public double actual(){return actual;}
     public long actualAt(){return actualAt;}
@@ -71,19 +72,23 @@ public final class DiscSound extends AbstractTickableSoundInstance {
                 int offset=AL10.alGetSourcei(alSource,AL11.AL_SAMPLE_OFFSET);
                 double measured=stream.position(queued,offset);
                 if(state==AL10.AL_STOPPED && stream.eof && AL10.alGetSourcei(alSource,AL10.AL_BUFFERS_PROCESSED)==queued){drained=true;measured=pcm.duration();}
-                if(state==AL10.AL_PLAYING||state==AL10.AL_PAUSED||state==AL10.AL_STOPPED){actual=Math.max(0,Math.min(pcm.duration(),measured));actualAt=System.currentTimeMillis();}
+                if(state==AL10.AL_PLAYING||state==AL10.AL_PAUSED||state==AL10.AL_STOPPED){actual=track.loop?measured%pcm.duration():Math.max(0,Math.min(pcm.duration(),measured));actualAt=System.currentTimeMillis();}
             }catch(Exception ex){SuperDisc.LOG.warn("Audio clock read failed",ex);}
         });
     }
     private final class PcmStream implements AudioStream {
-        final RandomAccessFile file;final AudioDecoder.Prepared pcm;final long start;
+        final PcmReader file;final AudioDecoder.Prepared pcm;final long start;
+        final byte[] data;
+        double currentGain;
         final PlaybackCursor cursor=new PlaybackCursor();long readFrames;volatile boolean eof,closed;
         PcmStream(AudioDecoder.Prepared pcm,double position)throws IOException {
-            this.pcm=pcm;start=Math.min(pcm.frames(),Math.max(0,(long)(position*pcm.rate())));file=new RandomAccessFile(pcm.path().toFile(),"r");file.seek(16+start*2);
+            this.pcm=pcm;start=Math.min(pcm.frames(),Math.max(0,(long)(position*pcm.rate())));file=new PcmReader(pcm.path(),pcm.frames(),start);
+            data=new byte[Math.max(2,pcm.rate()/4*2)];
+            currentGain=PcmGain.outputGain(requestedVolume,pcm.boost(),ClientPlayback.distortionProtection);
         }
         @Override public AudioFormat getFormat(){return new AudioFormat(pcm.rate(),16,1,true,false);}
         @Override public synchronized ByteBuffer read(int size)throws IOException {
-            int count=(int)Math.min(size-size%2,(pcm.frames()-start-readFrames)*2);
+            int count=file.read(data,track.loop);
             // Channel queues every non-null result, including an empty buffer. Empty buffers
             // used to corrupt the queue/frame ledger near EOF and move the cursor early.
             if(count<=0){
@@ -93,10 +98,17 @@ public final class DiscSound extends AbstractTickableSoundInstance {
                 if(valid&&alSource>=0&&AL10.alGetSourcei(alSource,AL10.AL_BUFFERS_QUEUED)==0){drained=true;actual=pcm.duration();actualAt=System.currentTimeMillis();}
                 return null;
             }
-            byte[] data=new byte[count];file.readFully(data);
-            for(int i=0;i<count;i+=2){short v=(short)((data[i]&255)|(data[i+1]<<8));short boosted=PcmGain.sample(v,pcm.boost());data[i]=(byte)boosted;data[i+1]=(byte)(boosted>>8);}
-            readFrames+=count/2;cursor.queued(count/2);eof=start+readFrames>=pcm.frames();
-            ByteBuffer result=BufferUtils.createByteBuffer(count);result.put(data).flip();return result;
+            boolean protect=ClientPlayback.distortionProtection;
+            double target=PcmGain.outputGain(requestedVolume,pcm.boost(),protect);
+            if(protect)currentGain=Math.min(currentGain,pcm.boost());
+            double step=(target-currentGain)/Math.max(1,pcm.rate()/50);
+            int ramp=Math.min(count/2,Math.max(1,pcm.rate()/50));
+            for(int i=0;i<count;i+=2){
+                currentGain=i/2<ramp?currentGain+step:target;
+                short v=(short)((data[i]&255)|(data[i+1]<<8));short boosted=PcmGain.sample(v,currentGain);data[i]=(byte)boosted;data[i+1]=(byte)(boosted>>8);
+            }
+            readFrames+=count/2;cursor.queued(count/2);eof=!track.loop&&file.eof();
+            ByteBuffer result=BufferUtils.createByteBuffer(count);result.put(data,0,count).flip();return result;
         }
         synchronized double position(int queued,int offset){
             return (start+cursor.position(queued,offset))/(double)pcm.rate();

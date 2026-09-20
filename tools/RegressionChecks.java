@@ -25,7 +25,7 @@ public class RegressionChecks {
             );
             List<String> files=new ArrayList<>();
             for(var entry:stubs.entrySet()){Path p=temp.resolve(entry.getKey());Files.createDirectories(p.getParent());Files.writeString(p,entry.getValue());files.add(p.toString());}
-            for(String file:List.of("Cache.java","WorkToken.java","client/PcmGain.java","client/PlaybackCursor.java"))files.add(project.resolve("src/main/java/dev/superdisc/"+file).toString());
+            for(String file:List.of("Cache.java","WorkToken.java","VolumePolicy.java","client/AudioPath.java","client/PcmReader.java","client/PcmGain.java","client/PlaybackCursor.java"))files.add(project.resolve("src/main/java/dev/superdisc/"+file).toString());
             Path test=temp.resolve("CoreTests.java");Files.writeString(test,TESTS);files.add(test.toString());
             List<String> options=new ArrayList<>(List.of("-encoding","UTF-8","-d",temp.toString()));options.addAll(files);
             if(ToolProvider.getSystemJavaCompiler().run(null,null,null,options.toArray(String[]::new))!=0)throw new AssertionError("Core test compilation failed");
@@ -66,20 +66,45 @@ public class RegressionChecks {
                 // All signed PCM16 inputs: full-scale material must never wrap or clip.
                 for(int peak:new int[]{0,1000,12000,16380,20000,32767,32768}){
                     double boost=PcmGain.boost(peak);
-                    check(boost>=1&&boost<=2,"bounded boost");
+                    check(boost>=1&&boost<=4,"bounded boost");
                     for(int value=-Math.min(32768,peak);value<=Math.min(32767,peak);value++){
                         short sample=PcmGain.sample((short)value,boost);
                         check(value==0||Integer.signum(sample)==Integer.signum(value),"no signed overflow");
-                        double unity=sample*PcmGain.sourceGain(1,boost);
-                        check(Math.abs(unity-value)<1.01,"100 percent preserves samples within quantization");
-                        check(Math.abs(sample*PcmGain.sourceGain(2,boost))<=32768,"200 percent stays within PCM range");
+                        check(PcmGain.sample((short)value,PcmGain.outputGain(1,boost,true))==value,"100 percent preserves original samples");
+                        check(sample==Math.round(value*PcmGain.outputGain(4,boost,true)),"protected 400 percent does not clip");
                     }
-                    check(PcmGain.sourceGain(0,boost)==0,"mute");
+                    check(PcmGain.outputGain(0,boost,true)==0&&PcmGain.outputGain(0,boost,false)==0,"mute in either mode");
                 }
-                check(PcmGain.boost(12000)==2,"quiet material can double amplitude");
+                check(PcmGain.boost(8000)==4,"quiet material can quadruple amplitude");
+                check(PcmGain.outputGain(4,1,false)==4,"disabled protection does not limit requested boost");
+                check(PcmGain.sample((short)8000,4)==32000,"unsafe gain still linear within output range");
+                check(PcmGain.sample((short)20000,4)==32767,"unsafe positive clipping without overflow");
+                check(PcmGain.sample((short)-20000,4)==-32768,"unsafe negative clipping without polarity wrap");
+                check(PcmGain.outputGain(4,1,true)==1,"enabling protection restores safe gain");
+                check(VolumePolicy.clamp(4)==4&&VolumePolicy.clamp(5)==4,"server accepts 400 percent but rejects higher gain");
                 WorkToken token=new WorkToken();token.cancel();boolean cancelled=false;
                 try{token.check();}catch(java.io.InterruptedIOException e){cancelled=true;}check(cancelled,"cancelled decode cannot continue");
                 Files.createDirectories(Cache.root());Path original=Cache.root().resolve("original.bin");byte[] data=new byte[20000];new Random(7).nextBytes(data);Files.write(original,data);
+                UUID a=UUID.randomUUID(),b=UUID.randomUUID(),c=UUID.randomUUID();
+                check(VolumePolicy.allowed(a,a,b,false),"initiator may adjust listener");
+                check(!VolumePolicy.allowed(a,b,a,false),"listener cannot change other players");
+                check(!VolumePolicy.allowed(a,a,b,true),"server refuses protected target");
+                check(VolumePolicy.allowed(a,b,b,true),"protected listener can adjust self");
+                check(!VolumePolicy.allowed(c,a,b,false),"old initiator loses management permission");
+                String quoted="  "+(char)34+"D:/My Music/song.mp3"+(char)34+"  ";
+                check(AudioPath.normalize(quoted).equals("D:/My Music/song.mp3"),"Windows quote stripping keeps internal spaces");
+                Path pcm=Cache.root().resolve("test.pcm");byte[] small=new byte[22];small[16]=10;small[18]=20;small[20]=30;Files.write(pcm,small);
+                try(PcmReader reader=new PcmReader(pcm,3,2)){
+                    byte[] buffer=new byte[2000];check(reader.read(buffer,true)==2000,"loop fills whole output buffer");
+                    for(int i=0;i<1000;i++)check(buffer[i*2]==new int[]{30,10,20}[i%3]&&buffer[i*2+1]==0,"sample-exact loop with no inserted silence");
+                    check(reader.read(buffer,true)==2000,"loop continues through next buffer");
+                    for(int i=0;i<1000;i++)check(buffer[i*2]==new int[]{10,20,30}[i%3],"boundary continuity across output buffers");
+                }
+                try(PcmReader reader=new PcmReader(pcm,3,0)){
+                    byte[] buffer=new byte[100];check(reader.read(buffer,false)==6,"nonloop preserves exact end");check(reader.read(buffer,false)==0,"nonloop returns EOF");
+                }
+                PlaybackCursor endless=new PlaybackCursor();for(int i=0;i<100000;i++)endless.queued(250);
+                check(endless.position(4,125)==24999125,"bounded cursor history preserves long-running clock");
                 Track t=new Track();t.hash=Cache.sha256(original);t.name="test";t.extension="mp3";t.size=data.length;
                 Cache.Incoming partial=new Cache.Incoming(t);partial.append(0,Arrays.copyOf(data,100));Path part=partial.part;partial.close();
                 check(!Files.exists(part),"cancel removes partial file");
@@ -91,7 +116,7 @@ public class RegressionChecks {
                 try(Cache.Incoming replacement=new Cache.Incoming(t)){replacement.append(0,new byte[100]);}
                 check(Cache.valid(t),"cancel never deletes another complete cache");
                 try(var list=Files.list(Cache.root())){check(list.noneMatch(p->p.toString().endsWith(".part")),"no orphaned transfer partials");}
-                System.out.println("PASS: "+checks+" assertions: queue clock/EOF, 0-200% PCM gain, cancellation, partial cleanup and cache preservation.");
+                System.out.println("PASS: "+checks+" assertions: permissions, path quotes, seamless PCM loops, bounded clock, gain, cancellation and cache preservation.");
             }
         }
         """;

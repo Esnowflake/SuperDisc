@@ -10,6 +10,8 @@ import java.util.UUID;
 public final class Cache {
     public static final long MAX_BYTES = 32L * 1024 * 1024;
     public static final double MAX_SECONDS = 1200;
+    private record Verified(long size,java.nio.file.attribute.FileTime modified,String hash) {}
+    private static final java.util.Map<Path,Verified> verified=new java.util.LinkedHashMap<>(16,.75f,true);
     public static Path root() { return FMLPaths.GAMEDIR.get().resolve("super_disc/audio_cache"); }
     public static String safeName(String s) {
         String result = s.replaceAll("[^\\p{L}\\p{N}._ -]", "_");
@@ -28,7 +30,14 @@ public final class Cache {
         return HexFormat.of().formatHex(digest.digest());
     }
     public static boolean valid(Track track) {
-        try { Path p=file(track.hash,track.name,track.extension); return Files.isRegularFile(p) && Files.size(p)==track.size && sha256(p).equals(track.hash); }
+        try {
+            Path p=file(track.hash,track.name,track.extension);if(!Files.isRegularFile(p)||Files.size(p)!=track.size)return false;
+            var time=Files.getLastModifiedTime(p);
+            synchronized(verified){var v=verified.get(p);if(v!=null&&v.size==track.size&&v.modified.equals(time)&&v.hash.equals(track.hash))return true;}
+            if(!sha256(p).equals(track.hash))return false;
+            synchronized(verified){verified.put(p,new Verified(track.size,time,track.hash));while(verified.size()>128)verified.remove(verified.keySet().iterator().next());}
+            return true;
+        }
         catch(Exception e) { return false; }
     }
     public static final class Incoming implements AutoCloseable {
@@ -37,11 +46,11 @@ public final class Cache {
         private final String hash;
         private OutputStream out;
         private final WorkToken token=new WorkToken();
-        public long received;
+        public volatile long received;
         public Incoming(Track track) throws IOException {
             if(track.size<=0 || track.size>MAX_BYTES) throw new IOException("File size limit");
             Files.createDirectories(root()); target=file(track.hash,track.name,track.extension);
-            part=root().resolve(UUID.randomUUID()+".part"); size=track.size; hash=track.hash; out=Files.newOutputStream(part);
+            part=root().resolve(UUID.randomUUID()+".part"); size=track.size; hash=track.hash; out=new BufferedOutputStream(Files.newOutputStream(part),65536);
         }
         public synchronized void append(long offset,byte[] bytes) throws IOException {
             token.check();

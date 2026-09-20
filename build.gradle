@@ -3,7 +3,7 @@ plugins {
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
 }
 group = 'dev.superdisc'
-version = '1.0.0'
+version = '2.0.0'
 base { archivesName = 'super-disc-forge-1.20.1' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 jarJar.enable()

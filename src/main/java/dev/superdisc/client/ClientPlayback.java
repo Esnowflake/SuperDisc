@@ -25,14 +25,23 @@ public final class ClientPlayback {
         ImportJob(Path source){this.source=source;}
     }
     private static long tick, connection=0;
+    private static Object serverConnection;
     private static long clockOffset, rtt;
     private static final Properties prefs=new Properties();
     private static final Path prefsFile=Cache.root().getParent().resolve("client.properties");
     private static MessageSignature progressSignature;
     public static boolean notifications=true;
+    public static boolean protectVolume;
+    public static volatile boolean distortionProtection=true;
+    public record Listener(UUID id,String name,float volume,boolean locked) {}
+    private static final Map<String,Float> personalVolumes=new HashMap<>();
+    private static final Map<String,List<Listener>> rosters=new HashMap<>();
+    private static final java.util.concurrent.atomic.AtomicLong pendingDownloadBytes=new java.util.concurrent.atomic.AtomicLong();
     static {
-        try(var in=Files.newInputStream(prefsFile)){prefs.load(in);notifications=Boolean.parseBoolean(prefs.getProperty("notifications","true"));}catch(IOException ignored){}
+        try(var in=Files.newInputStream(prefsFile)){prefs.load(in);notifications=Boolean.parseBoolean(prefs.getProperty("notifications","true"));protectVolume=Boolean.parseBoolean(prefs.getProperty("protectVolume","false"));}catch(IOException ignored){}
+        distortionProtection=Boolean.parseBoolean(prefs.getProperty("distortionProtection","true"));
     }
+    public static void setDistortionProtection(boolean enabled){distortionProtection=enabled;prefs.setProperty("distortionProtection",Boolean.toString(enabled));savePrefs();}
     public static final class Local {
         public Track track;
         public AudioDecoder.Prepared pcm;
@@ -50,6 +59,15 @@ public final class ClientPlayback {
     public static long serverNow(){return System.currentTimeMillis()+clockOffset;}
     public static Local get(String key){return locals.get(key);}
     public static boolean importing(String key){return imports.containsKey(key);}
+    public static float volume(String key){return personalVolumes.getOrDefault(key,1f);}
+    public static List<Listener> listeners(String key){return rosters.getOrDefault(key,List.of());}
+    public static boolean canManage(String key){Local l=get(key);return l!=null&&MC.player!=null&&l.track.controller.equals(MC.player.getUUID());}
+    public static void watchVolumes(String key,boolean watch){Local l=get(key);if(l!=null){var tag=l.track.tag();tag.putBoolean("watch",watch);Net.toServer("volume_watch",tag);}}
+    public static void setVolume(String key,UUID target,double value){Local l=get(key);if(l!=null){var tag=l.track.tag();tag.putUUID("target",target);tag.putFloat("volume",(float)value);Net.toServer("volume",tag);}}
+    public static void setProtection(String key,boolean enabled){
+        protectVolume=enabled;prefs.setProperty("protectVolume",Boolean.toString(enabled));savePrefs();
+        Local l=get(key);if(l!=null){var tag=l.track.tag();tag.putBoolean("protected",enabled);Net.toServer("protect",tag);}
+    }
     public static double displayedPosition(Local l) {
         if(l.endedTransport==l.track.transport)return l.track.duration;
         if(l.sound!=null&&l.sound.hasClock())return l.sound.actual();
@@ -60,7 +78,7 @@ public final class ClientPlayback {
         Local l=locals.get(t.key());
         if(l==null||!l.track.revision.equals(t.revision)){
             if(l!=null)l.close();l=new Local(t);locals.put(t.key(),l);
-        }else{if(l.track.transport!=t.transport){l.stop();l.endedTransport=-1;}if(!t.playing&&t.position<t.duration)l.endedTransport=-1;l.track=t;if(l.sound!=null)l.sound.gain(t.volume);}
+        }else{if(l.track.transport!=t.transport||l.track.loop!=t.loop){l.stop();l.endedTransport=-1;}if(!t.playing&&t.position<t.duration)l.endedTransport=-1;l.track=t;if(l.sound!=null)l.sound.gain(volume(t.key()));}
         return l;
     }
     public static void packet(Net.Packet packet) {
@@ -69,6 +87,13 @@ public final class ClientPlayback {
         if(op.equals("clock")){long now=System.currentTimeMillis();rtt=Math.max(0,now-tag.getLong("sent"));clockOffset=tag.getLong("server")+rtt/2-now;return;}
         if(op.equals("message")){notice(tag.getString("text"));return;}
         Track track=Track.read(tag);String key=track.key();Local l=locals.get(key);
+        if(op.equals("personal")){personalVolumes.put(key,tag.getFloat("personalVolume"));protectVolume=tag.getBoolean("protected");return;}
+        if(op.equals("volumes")){
+            List<Listener> entries=new ArrayList<>();var rows=tag.getList("players",10);
+            for(int i=0;i<rows.size();i++){var row=rows.getCompound(i);entries.add(new Listener(row.getUUID("id"),row.getString("name"),row.getFloat("volume"),row.getBoolean("protected")));}
+            rosters.put(key,List.copyOf(entries));return;
+        }
+        if(op.equals("clock_state")){if(l!=null&&l.track.revision.equals(track.revision)&&l.track.transport==track.transport){l.track.position=track.position;l.track.epoch=track.epoch;}return;}
         if(cancelledRevisions.contains(track.revision))return;
         if(op.equals("cancel")){if(l!=null&&l.track.revision.equals(track.revision)){l.close();locals.put(key,new Local(track));}return;}
         if(op.equals("remove")){ImportJob job=imports.remove(key);if(job!=null)job.work.cancel();if(l!=null)l.close();locals.remove(key);localPaths.remove(key);if(MC.screen instanceof DiscScreen screen && screen.key.equals(key))MC.setScreen(null);return;}
@@ -89,12 +114,13 @@ public final class ClientPlayback {
         if(op.equals("prepare")){l=update(track);if(l.work.cancelled()){l=new Local(track);locals.put(key,l);}l.sleeping=false;if(l.ready){ready(l);return;}prepare(l);return;}
         if(op.equals("download")) {
             if(l==null||!l.track.revision.equals(track.revision)||l.download==null)return;
-            try{
-                l.download.append(tag.getLong("offset"),packet.bytes());
-                if(l.download.received==track.size){Cache.Incoming incoming=l.download;Local current=l;long generation=connection;
-                    IO.execute(()->{try{current.work.check();incoming.finish();incoming.close();MC.execute(()->{if(generation==connection&&locals.get(key)==current&&!current.work.cancelled()){current.download=null;decode(current);}});}catch(Exception e){incoming.close();failAsync(current,generation,e);}});
-                }
-            }catch(Exception e){fail(l,e);}return;
+            Cache.Incoming incoming=l.download;Local current=l;long generation=connection;
+            int bytes=packet.bytes().length;
+            if(pendingDownloadBytes.addAndGet(bytes)>8L*1024*1024){pendingDownloadBytes.addAndGet(-bytes);fail(l,new IOException("磁盘写入过慢，下载已暂停，请重试"));return;}
+            IO.execute(()->{try{
+                current.work.check();incoming.append(tag.getLong("offset"),packet.bytes());
+                if(incoming.received==track.size){incoming.finish();incoming.close();MC.execute(()->{if(generation==connection&&locals.get(key)==current&&!current.work.cancelled()){current.download=null;decode(current);}});}
+            }catch(Exception e){incoming.close();failAsync(current,generation,e);}finally{pendingDownloadBytes.addAndGet(-bytes);}});return;
         }
     }
     private static void finishImport(Track track){ImportJob job=imports.get(track.key());if(job!=null&&job.id.equals(track.revision))imports.remove(track.key());}
@@ -168,8 +194,10 @@ public final class ClientPlayback {
         if(op.equals("seek"))tag.putDouble("seek",value);if(op.equals("volume"))tag.putFloat("volume",(float)value);Net.toServer(op,tag);
     }
     public static void tick() {
-        if(MC.getConnection()==null||MC.player==null||MC.level==null){if(!locals.isEmpty())reset();return;}
+        if(MC.getConnection()==null||MC.player==null||MC.level==null){if(tick>0||!locals.isEmpty())reset();return;}
+        if(serverConnection!=MC.getConnection()){reset();serverConnection=MC.getConnection();}
         tick++;
+        if(tick==1){var tag=new CompoundTag();tag.putBoolean("protected",protectVolume);Net.toServer("preferences",tag);}
         if(tick%100==1){var tag=new CompoundTag();tag.putLong("sent",System.currentTimeMillis());Net.toServer("clock",tag);}
         for(Local l:new ArrayList<>(locals.values())) {
             Track t=l.track;
@@ -188,8 +216,8 @@ public final class ClientPlayback {
             if(!t.playing||l.pcm==null||l.sleeping||(!audible&&!owner)||l.failed||l.work.cancelled()||l.endedTransport==t.transport){l.stop();continue;}
             long now=serverNow();if(now<t.epoch)continue;double expected=t.at(now);
             if(l.sound!=null) {
-                l.sound.gain(audible?t.volume:0);
-                l.sound.poll();
+                l.sound.gain(audible?volume(t.key()):0);
+                if(tick%2==0)l.sound.poll();
                 if(l.sound.ended()){
                     l.endedTransport=t.transport;l.stop();
                     if(owner)Net.toServer("ended",t.tag());
@@ -201,17 +229,18 @@ public final class ClientPlayback {
                         var tag=t.tag();tag.putDouble("actual",actual);tag.putInt("age",(int)Math.min(1000,System.currentTimeMillis()-l.sound.actualAt()+rtt/2));Net.toServer("beat",tag);
                     }
                     // Do not seek/recreate an almost-finished source to chase a clamped end estimate.
-                    if(!owner && actual<t.duration-2 && expected<t.duration-2 && Math.abs(actual-expected)>.75 && tick%40==0)l.stop();
+                    double difference=Math.abs(actual-expected);if(t.loop)difference=Math.min(difference,t.duration-difference);
+                    if(!owner && actual<t.duration-2 && expected<t.duration-2 && difference>.75 && tick%40==0)l.stop();
                 }
                 if(l.sound!=null && System.currentTimeMillis()-l.soundCreated>3000 && !MC.getSoundManager().isActive(l.sound))l.stop();
             }
             if(l.sound==null && (expected<t.duration || t.loop)) {
-                l.sound=new DiscSound(t,l.pcm,expected);l.sound.gain(audible?t.volume:0);l.soundCreated=System.currentTimeMillis();MC.getSoundManager().play(l.sound);
+                l.sound=new DiscSound(t,l.pcm,expected,audible?volume(t.key()):0);l.soundCreated=System.currentTimeMillis();MC.getSoundManager().play(l.sound);
             }
         }
     }
     public static void soundStarted(net.minecraftforge.client.event.sound.PlayStreamingSourceEvent event){if(event.getSound() instanceof DiscSound sound)sound.bind(event.getChannel());}
-    public static void reset(){connection++;imports.values().forEach(j->j.work.cancel());imports.clear();cancelledRevisions.clear();locals.values().forEach(Local::close);locals.clear();localPaths.clear();pendingAutoplay.clear();clockOffset=0;tick=0;}
+    public static void reset(){connection++;imports.values().forEach(j->j.work.cancel());imports.clear();cancelledRevisions.clear();locals.values().forEach(Local::close);locals.clear();personalVolumes.clear();rosters.clear();localPaths.clear();pendingAutoplay.clear();clockOffset=0;tick=0;}
     private static void failAsync(Local l,long generation,Exception e){MC.execute(()->{if(generation==connection&&locals.get(l.track.key())==l&&!l.work.cancelled())fail(l,e);});}
     private static void fail(Local l,Exception e){l.close();l.preparing=false;l.failed=true;l.ready=false;l.status="同步/解码失败";var tag=l.track.tag();tag.putString("error",String.valueOf(e.getMessage()));Net.toServer("failed",tag);notice("音频处理失败："+e.getMessage());SuperDisc.LOG.error("Audio prepare {}",l.track.hash,e);}
     public static void notice(String message){if(MC.player!=null)MC.gui.getChat().addMessage(Component.literal("[Super Disc] "+message));}
@@ -232,5 +261,6 @@ public final class ClientPlayback {
             }
         }catch(Exception ex){SuperDisc.LOG.debug("Progress replacement unavailable",ex);}
     }
-    public static void setNotifications(boolean value){notifications=value;prefs.setProperty("notifications",Boolean.toString(value));try{Files.createDirectories(prefsFile.getParent());try(var out=Files.newOutputStream(prefsFile)){prefs.store(out,"Super Disc client preferences");}}catch(IOException e){SuperDisc.LOG.warn("Save client preference",e);}}
+    public static void setNotifications(boolean value){notifications=value;prefs.setProperty("notifications",Boolean.toString(value));savePrefs();}
+    private static void savePrefs(){Properties snapshot=new Properties();snapshot.putAll(prefs);IO.execute(()->{try{Files.createDirectories(prefsFile.getParent());try(var out=Files.newOutputStream(prefsFile)){snapshot.store(out,"Super Disc client preferences");}}catch(IOException e){SuperDisc.LOG.warn("Save client preference",e);}});}
 }

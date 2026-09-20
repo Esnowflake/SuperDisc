@@ -10,7 +10,7 @@ $OutputEncoding = $utf8
 & "$PSScriptRoot/tools/verify-resources.ps1"
 & "$PSScriptRoot/gradlew.bat" clean jarJar --no-daemon --console=plain 2>&1 | Tee-Object -FilePath "$PSScriptRoot/build-output.log"
 if($LASTEXITCODE -ne 0) { throw 'Build failed. See build-output.log.' }
-$artifact=Join-Path $PSScriptRoot 'build/libs/super-disc-forge-1.20.1-1.0.0-all.jar'
+$artifact=Join-Path $PSScriptRoot 'build/libs/super-disc-forge-1.20.1-2.0.0-all.jar'
 if(!(Test-Path -LiteralPath $artifact)) { throw 'Bundled JAR not produced.' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip=[System.IO.Compression.ZipFile]::OpenRead($artifact)

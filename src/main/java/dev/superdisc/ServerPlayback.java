@@ -24,6 +24,11 @@ import java.util.*;
 public final class ServerPlayback {
     private static final Map<String,Session> sessions = new HashMap<>();
     private static final Map<UUID,String> viewers = new HashMap<>();
+    private static final Set<UUID> volumeViewers = new HashSet<>();
+    private static final Map<UUID,String> lastRoster = new HashMap<>();
+    private static final Map<UUID,Boolean> protectedPlayers = new HashMap<>();
+    private static final String PROTECTED="super_disc_protected_volume";
+    private static final java.util.concurrent.ExecutorService CACHE_IO=java.util.concurrent.Executors.newFixedThreadPool(2,r->{Thread thread=new Thread(r,"Super Disc server cache");thread.setDaemon(true);return thread;});
     private static long tick;
     private static final int AUDIENCE_RANGE = 64;
     private static final int MAX_ACTIVE = 32;
@@ -33,12 +38,13 @@ public final class ServerPlayback {
         UUID uploader;
         long lastUpload, syncStart, lastBeat;
         UUID importRequest;
-        boolean wantPlay;
+        boolean wantPlay, checking;
         final Set<UUID> audience=new HashSet<>(), ready=new HashSet<>(), waiting=new HashSet<>();
         final Map<UUID,Download> downloads=new HashMap<>();
         final Map<UUID,Long> progress=new HashMap<>();
-        Session(Track t) { track=t; }
-        void closeTransfers() { if(upload!=null){upload.close();upload=null;} downloads.values().forEach(Download::close); downloads.clear(); }
+        final Map<UUID,Float> volumes;
+        Session(Track t) { track=t;volumes=t.listenerVolumes; }
+        void closeTransfers() { checking=false;if(upload!=null){upload.close();upload=null;} downloads.values().forEach(Download::close); downloads.clear(); }
     }
     private static final class Download {
         final InputStream in; long sent;
@@ -82,13 +88,15 @@ public final class ServerPlayback {
             track=new Track(player.level().dimension().location().toString(),event.getPos());
             DiscData.get(server).tracks.put(key,track);dirty(server);
         }
-        viewers.put(player.getUUID(),key);session(server,track);
+        viewers.put(player.getUUID(),key);Session s=session(server,track);
         Net.toPlayer(player,"open",track.tag());
+        personal(player,s);
     }
     public static void receive(ServerPlayer p,Net.Packet packet) throws Exception {
         MinecraftServer server=p.server;CompoundTag t=packet.tag();String op=packet.op();
         if(op.equals("clock")) { var reply=new CompoundTag();reply.putLong("sent",t.getLong("sent"));reply.putLong("server",System.currentTimeMillis());Net.toPlayer(p,"clock",reply);return; }
-        if(op.equals("close")) { viewers.remove(p.getUUID());return; }
+        if(op.equals("preferences")){protection(p,t.getBoolean("protected"));return;}
+        if(op.equals("close")) { viewers.remove(p.getUUID());volumeViewers.remove(p.getUUID());lastRoster.remove(p.getUUID());return; }
         Track request=Track.read(t);Track track=DiscData.get(server).tracks.get(request.key());
         if(track==null)return;
         Session s=session(server,track);
@@ -99,7 +107,9 @@ public final class ServerPlayback {
             double position=t.getDouble("actual");
             if(Double.isFinite(position)&&position>=0&&position<=track.duration) {
                 track.position=position;track.epoch=System.currentTimeMillis()-Math.min(1000,Math.max(0,t.getInt("age")));
-                sendState(server,s);
+                // Timing heartbeats do not dirty saved data or serialize the full manifest.
+                var clock=new CompoundTag();clock.putString("dimension",track.dimension);clock.putLong("pos",track.pos.asLong());clock.putUUID("revision",track.revision);clock.putLong("transport",track.transport);clock.putDouble("position",track.position);clock.putLong("epoch",track.epoch);
+                for(var listener:server.getPlayerList().getPlayers())if(s.audience.contains(listener.getUUID())||track.key().equals(viewers.get(listener.getUUID())))Net.toPlayer(listener,"clock_state",clock);
             }
             return;
         }
@@ -135,10 +145,17 @@ public final class ServerPlayback {
             cancelTransfers(server,s);s.ready.clear();s.waiting.clear();s.progress.clear();
             track.hash=request.hash;track.name=Cache.safeName(request.name);track.extension=request.extension;track.size=request.size;track.duration=request.duration;
             track.owner=p.getUUID();track.revision=t.getUUID("importRequest");track.position=0;
+            track.controller=new UUID(0,0);
             track.playing=false;track.syncing=true;s.wantPlay=false;s.syncStart=System.currentTimeMillis();s.importRequest=t.getUUID("importRequest");
             s.uploader=p.getUUID();s.lastUpload=System.currentTimeMillis();
-            if(Cache.valid(track)) { Net.toPlayer(p,"uploaded",track.tag());prepare(server,s,false); }
-            else { s.upload=new Cache.Incoming(track);Net.toPlayer(p,"upload",track.tag());sendState(server,s); }
+            s.checking=true;sendState(server,s);Track snapshot=Track.read(track.tag());
+            CACHE_IO.execute(()->{boolean cached=Cache.valid(snapshot);server.execute(()->{
+                if(sessions.get(snapshot.key())!=s||!track.revision.equals(snapshot.revision))return;
+                s.checking=false;
+                try{if(cached){Net.toPlayer(p,"uploaded",track.tag());prepare(server,s,s.wantPlay);}
+                    else{s.upload=new Cache.Incoming(track);Net.toPlayer(p,"upload",track.tag());sendState(server,s);}
+                }catch(Exception e){clear(server,s);message(p,"无法准备音频缓存："+e.getMessage());}
+            });});
             return;
         }
         if(op.equals("cancel_import")) {
@@ -146,14 +163,30 @@ public final class ServerPlayback {
             return;
         }
         if(!revision(s,t))return;
+        if(op.equals("volume_watch")) {
+            if(t.getBoolean("watch")&&track.controller.equals(p.getUUID())){volumeViewers.add(p.getUUID());lastRoster.remove(p.getUUID());roster(p,s);}
+            else{volumeViewers.remove(p.getUUID());lastRoster.remove(p.getUUID());}return;
+        }
+        if(op.equals("protect")){protection(p,t.getBoolean("protected"));personal(p,s);refreshRosters(server,s);return;}
+        if(op.equals("volume")) {
+            UUID target=t.hasUUID("target")?t.getUUID("target"):p.getUUID();
+            var listener=server.getPlayerList().getPlayer(target);float value=t.getFloat("volume");
+            if(listener!=null&&Float.isFinite(value)&&VolumePolicy.allowed(track.controller,p.getUUID(),target,protectedVolume(listener))){
+                s.volumes.put(target,VolumePolicy.clamp(value));dirty(server);personal(listener,s);refreshRosters(server,s);
+            }else roster(p,s);
+            return;
+        }
         if(op.equals("chunk")) {
             if(s.upload==null||!p.getUUID().equals(s.uploader))return;
             try {
                 s.upload.append(t.getLong("offset"),packet.bytes());s.lastUpload=System.currentTimeMillis();
                 var ack=track.tag();ack.putLong("offset",s.upload.received);Net.toPlayer(p,"upload_ack",ack);
                 if(s.upload.received==track.size) {
-                    s.upload.finish();s.upload.close();s.upload=null;Net.toPlayer(p,"uploaded",track.tag());prepare(server,s,s.wantPlay);
-                    SuperDisc.LOG.info("Audio upload verified {} {} bytes",track.hash,track.size);
+                    Cache.Incoming incoming=s.upload;s.checking=true;UUID revision=track.revision;
+                    CACHE_IO.execute(()->{try{incoming.finish();incoming.close();server.execute(()->{
+                        if(s.upload!=incoming||!track.revision.equals(revision))return;
+                        s.upload=null;s.checking=false;Net.toPlayer(p,"uploaded",track.tag());prepare(server,s,s.wantPlay);
+                    });}catch(Exception e){incoming.close();server.execute(()->{if(s.upload==incoming){clear(server,s);message(p,"音频校验失败："+e.getMessage());}});}});
                 }
             }catch(Exception e){s.closeTransfers();message(p,"音频上传失败："+e.getMessage());pause(server,s);}
         } else if(op.equals("clear")) {
@@ -169,11 +202,10 @@ public final class ServerPlayback {
                 if(sessions.values().stream().filter(x->x.track.playing||x.wantPlay).count()>=MAX_ACTIVE && !track.playing) {message(p,"最多同时播放 32 台唱片机。");return;}
                 if(op.equals("restart")){pause(server,s);track.position=0;}
                 if(track.position>=track.duration)track.position=0;
-                if(!track.playing)prepare(server,s,true);
+                if(!track.playing){track.controller=p.getUUID();prepare(server,s,true);}
             }
         } else if(op.equals("pause")) pause(server,s);
         else if(op.equals("mode")) {track.loop=!track.loop;sendState(server,s);}
-        else if(op.equals("volume")) {float volume=t.getFloat("volume");if(Float.isFinite(volume)){track.volume=Math.max(0,Math.min(2,volume));sendState(server,s);}}
         else if(op.equals("unbind")) {
             pause(server,s);s.closeTransfers();var state=track.tag();state.putBoolean("removed",true);
             for(ServerPlayer listener:server.getPlayerList().getPlayers())Net.toPlayer(listener,"remove",state);
@@ -183,13 +215,13 @@ public final class ServerPlayback {
     private static Set<UUID> audience(MinecraftServer server,Track track) {
         Set<UUID> result=new HashSet<>();
         for(ServerPlayer p:server.getPlayerList().getPlayers()) {
-            if(p.getUUID().equals(track.owner) || (p.level().dimension().location().toString().equals(track.dimension) && p.distanceToSqr(track.pos.getX()+.5,track.pos.getY()+.5,track.pos.getZ()+.5)<AUDIENCE_RANGE*AUDIENCE_RANGE)) result.add(p.getUUID());
+            if(p.getUUID().equals(track.owner) || p.getUUID().equals(track.controller) || (p.level().dimension().location().toString().equals(track.dimension) && p.distanceToSqr(track.pos.getX()+.5,track.pos.getY()+.5,track.pos.getZ()+.5)<AUDIENCE_RANGE*AUDIENCE_RANGE)) result.add(p.getUUID());
         }
         return result;
     }
     private static void prepare(MinecraftServer server,Session s,boolean play) {
         s.wantPlay=play;s.syncStart=System.currentTimeMillis();s.track.syncing=true;
-        if(s.upload!=null){sendState(server,s);return;}
+        if(s.upload!=null||s.checking){sendState(server,s);return;}
         if(!Files.isRegularFile(Cache.file(s.track.hash,s.track.name,s.track.extension))) {
             s.wantPlay=false;s.track.syncing=false;sendState(server,s);
             for(var p:server.getPlayerList().getPlayers())if(s.track.key().equals(viewers.get(p.getUUID())))message(p,"服务器音频缓存已丢失，请重新选择该文件。");
@@ -197,7 +229,7 @@ public final class ServerPlayback {
         }
         s.audience.clear();s.audience.addAll(audience(server,s.track));
         for(UUID id:s.audience) if(!s.ready.contains(id)) {
-            ServerPlayer listener=server.getPlayerList().getPlayer(id); if(listener!=null) {Net.toPlayer(listener,"prepare",s.track.tag());s.waiting.add(id);}
+            ServerPlayer listener=server.getPlayerList().getPlayer(id); if(listener!=null) {personal(listener,s);Net.toPlayer(listener,"prepare",s.track.tag());s.waiting.add(id);}
         }
         sendState(server,s);
         if(play && s.ready.containsAll(s.audience))start(server,s);
@@ -213,7 +245,7 @@ public final class ServerPlayback {
     }
     private static void clear(MinecraftServer server,Session s) {
         cancelTransfers(server,s);Track t=s.track;s.ready.clear();s.waiting.clear();s.progress.clear();s.wantPlay=false;
-        t.playing=false;t.syncing=false;t.revision=UUID.randomUUID();t.hash="";t.name="";t.extension="";t.size=0;t.duration=0;t.position=0;t.owner=new UUID(0,0);sendState(server,s);
+        t.playing=false;t.syncing=false;t.revision=UUID.randomUUID();t.hash="";t.name="";t.extension="";t.size=0;t.duration=0;t.position=0;t.owner=new UUID(0,0);t.controller=new UUID(0,0);sendState(server,s);
     }
     private static void finish(MinecraftServer server,Session s) {
         if(s.track.loop){s.track.position=0;start(server,s,0,false);}
@@ -245,6 +277,7 @@ public final class ServerPlayback {
                     }
                 }
                 if(tick%20!=0)continue;
+                refreshRosters(server,s);
                 if(!exists(server,t)) {
                     var l=level(server,t);
                     if(l!=null && l.hasChunkAt(t.pos)) {
@@ -262,13 +295,13 @@ public final class ServerPlayback {
                     long done=s.audience.stream().mapToLong(id->s.progress.getOrDefault(id,0L)).sum();
                     for(UUID id:s.audience){var p=server.getPlayerList().getPlayer(id);if(p!=null)progress(p,t,"同步 / 解码 ("+s.ready.size()+"/"+s.audience.size()+")",done,Math.max(1,s.audience.size())*t.size);}
                 }
-                if((t.playing||t.syncing)&&s.upload==null) {
+                if((t.playing||t.syncing)&&s.upload==null&&!s.checking) {
                     Set<UUID> desired=audience(server,t);
                     for(UUID old:new HashSet<>(s.audience))if(!desired.contains(old)){
                         s.ready.remove(old);s.waiting.remove(old);var p=server.getPlayerList().getPlayer(old);if(p!=null)Net.toPlayer(p,"sleep",t.tag());
                     }
                     for(UUID id:desired)if(!s.audience.contains(id)){
-                        s.waiting.add(id);var p=server.getPlayerList().getPlayer(id);if(p!=null)Net.toPlayer(p,"prepare",t.tag());
+                        s.waiting.add(id);var p=server.getPlayerList().getPlayer(id);if(p!=null){personal(p,s);Net.toPlayer(p,"prepare",t.tag());}
                     }
                     s.audience.clear();s.audience.addAll(desired);
                     if(t.syncing) {
@@ -279,7 +312,7 @@ public final class ServerPlayback {
                     }
                     if(t.playing && now>=t.epoch) {
                         // A healthy owner's device decides EOF. Wall-clock estimates must not cut its tail.
-                        if(t.at(now)>=t.duration && now-s.lastBeat>5000)finish(server,s);
+                        if(!t.loop && t.at(now)>=t.duration && now-s.lastBeat>5000)finish(server,s);
                         else {var l=level(server,t);l.sendParticles(ParticleTypes.NOTE,t.pos.getX()+.5,t.pos.getY()+1.2,t.pos.getZ()+.5,0,(tick/20%24)/24.0,0,0,1);}
                     }
                 }
@@ -287,5 +320,25 @@ public final class ServerPlayback {
         }
     }
     private static void progress(ServerPlayer p,Track t,String phase,long done,long total){var tag=t.tag();tag.putString("phase",phase);tag.putLong("done",done);tag.putLong("total",total);Net.toPlayer(p,"progress",tag);}
-    @SubscribeEvent public static void stopped(ServerStoppedEvent event){sessions.values().forEach(Session::closeTransfers);sessions.clear();viewers.clear();tick=0;}
+    private static boolean protectedVolume(ServerPlayer p){return protectedPlayers.getOrDefault(p.getUUID(),p.getPersistentData().getBoolean(PROTECTED));}
+    private static void protection(ServerPlayer p,boolean value){protectedPlayers.put(p.getUUID(),value);p.getPersistentData().putBoolean(PROTECTED,value);}
+    private static void personal(ServerPlayer p,Session s){var tag=s.track.tag();tag.putFloat("personalVolume",s.volumes.getOrDefault(p.getUUID(),1f));tag.putBoolean("protected",protectedVolume(p));Net.toPlayer(p,"personal",tag);}
+    private static void roster(ServerPlayer p,Session s){
+        if(!s.track.controller.equals(p.getUUID()))return;
+        var rows=new net.minecraft.nbt.ListTag();
+        for(var player:p.server.getPlayerList().getPlayers()){
+            var row=new CompoundTag();row.putUUID("id",player.getUUID());row.putString("name",player.getGameProfile().getName());
+            row.putFloat("volume",s.volumes.getOrDefault(player.getUUID(),1f));row.putBoolean("protected",protectedVolume(player));rows.add(row);
+        }
+        String signature=s.track.revision+"/"+rows.toString();
+        if(signature.equals(lastRoster.get(p.getUUID())))return;
+        lastRoster.put(p.getUUID(),signature);var tag=s.track.tag();tag.put("players",rows);Net.toPlayer(p,"volumes",tag);
+    }
+    private static void refreshRosters(MinecraftServer server,Session s){
+        for(UUID id:new HashSet<>(volumeViewers)){var p=server.getPlayerList().getPlayer(id);
+            if(p==null){volumeViewers.remove(id);lastRoster.remove(id);}
+            else if(s.track.key().equals(viewers.get(id)))roster(p,s);
+        }
+    }
+    @SubscribeEvent public static void stopped(ServerStoppedEvent event){sessions.values().forEach(Session::closeTransfers);sessions.clear();viewers.clear();volumeViewers.clear();lastRoster.clear();protectedPlayers.clear();tick=0;}
 }

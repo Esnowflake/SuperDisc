@@ -10,6 +10,8 @@ public final class PlaybackCursor {
     public synchronized void queued(int count) {
         if(count<=0)throw new IllegalArgumentException("Do not queue empty PCM buffers");
         buffers.add(count);frames+=count;
+        // Minecraft keeps four buffers queued. Retain extra history without growing on endless loops.
+        if(buffers.size()>16)buffers.remove(0);
     }
     public synchronized long position(int queued,int offset) {
         long remaining=0;

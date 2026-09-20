@@ -3,7 +3,7 @@ loaderVersion="[47,)"
 license="All Rights Reserved"
 [[mods]]
 modId="super_disc"
-version="1.0.0"
+version="2.0.0"
 displayName="Super Disc / 超级唱片"
 description='''A golden disc that plays shared MP3 and Ogg Vorbis audio through vanilla jukeboxes.'''
 [[dependencies.super_disc]]

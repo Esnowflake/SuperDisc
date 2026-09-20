@@ -1,0 +1,10 @@
+.gradle/
+.idea/
+*.iml
+build/
+run/
+run-server/
+super_disc/
+logs/
+
+*.log

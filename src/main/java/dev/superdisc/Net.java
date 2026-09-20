@@ -12,7 +12,7 @@ import java.util.function.Supplier;
 /** Two explicitly directed envelopes. All commands and permissions are validated server-side. */
 public final class Net {
     public static final int CHUNK = 16384;
-    public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(new ResourceLocation(SuperDisc.ID, "main"), () -> "2", "2"::equals, "2"::equals);
+    public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(new ResourceLocation(SuperDisc.ID, "main"), () -> "4", "4"::equals, "4"::equals);
     public static Consumer<Packet> clientHandler = p -> {};
     public record Packet(String op, CompoundTag tag, byte[] bytes) {
         public Packet(String op, CompoundTag tag) { this(op, tag, new byte[0]); }

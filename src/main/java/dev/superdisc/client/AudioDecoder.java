@@ -10,6 +10,8 @@ import java.nio.file.*;
 /** Decode once to disk, mono signed 16-bit PCM. Mono enables positional attenuation in OpenAL. */
 public final class AudioDecoder {
     private static final int MAGIC=0x53445031;
+    private record Cached(Prepared pcm,long size,java.nio.file.attribute.FileTime modified) {}
+    private static final java.util.Map<Path,Cached> prepared=new java.util.LinkedHashMap<>(16,.75f,true);
     public record Prepared(Path path,int rate,long frames,double boost) { public double duration(){return frames/(double)rate;} }
     public static Prepared prepare(Track track) throws Exception {
         return prepare(track,new WorkToken());
@@ -18,6 +20,9 @@ public final class AudioDecoder {
         token.check();
         Path input=Cache.file(track.hash,track.name,track.extension);
         Path target=Cache.root().resolve(track.hash+".mono-v1.pcm");
+        synchronized(prepared){Cached cached=prepared.get(target);
+            if(cached!=null&&Files.isRegularFile(target)&&Files.size(target)==cached.size&&Files.getLastModifiedTime(target).equals(cached.modified))return cached.pcm;
+        }
         if(Files.isRegularFile(target))try(var f=new RandomAccessFile(target.toFile(),"r")){
             if(f.readInt()==MAGIC){int rate=f.readInt();long frames=f.readLong();if(rate>=8000&&rate<=192000&&frames>0&&f.length()==16+frames*2)return inspect(target,rate,frames,token);}
         }
@@ -64,7 +69,9 @@ public final class AudioDecoder {
             in.skipNBytes(16);byte[] bytes=new byte[65536];int n;
             while((n=in.readNBytes(bytes,0,bytes.length))>0){token.check();for(int i=0;i+1<n;i+=2)peak=Math.max(peak,Math.abs((short)((bytes[i]&255)|(bytes[i+1]<<8))));}
         }
-        return new Prepared(file,rate,frames,PcmGain.boost(peak));
+        Prepared result=new Prepared(file,rate,frames,PcmGain.boost(peak));
+        synchronized(prepared){prepared.put(file,new Cached(result,Files.size(file),Files.getLastModifiedTime(file)));while(prepared.size()>64)prepared.remove(prepared.keySet().iterator().next());}
+        return result;
     }
     private static void check(int rate,long frames) throws IOException {
         if(rate<8000||rate>192000||frames>rate*Cache.MAX_SECONDS||frames*2>256L*1024*1024)throw new IOException("Audio exceeds duration/PCM size limit");
