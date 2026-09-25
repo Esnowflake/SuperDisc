@@ -37,7 +37,7 @@ class ReleaseTests(unittest.TestCase):
         self.value = value
         self.tag = "v" + value
         (self.root / "gradle.properties").write_text(f"mod_version={value}\n")
-        (self.root / "CHANGELOG.md").write_text(f"# Changes\n\n## [Unreleased]\n\n- Not released\n\n## [{value}] - 2026-09-25\n\n- Actual changes\n\n## [2.0.0]\n\n- Old changes\n")
+        (self.root / "README.md").write_text(f"# Super Disc\n\n## Installation\n\n- Not release notes\n\n## [{value}] - 2026-09-25\n\n- Actual changes\n\n## Building\n\n- Not release notes either\n")
 
     def fixtures(self):
         for target in release.targets():
@@ -103,7 +103,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(release.notes(self.value), "- Actual changes")
         for text in ["## [Unreleased]\n- pending", f"## [{self.value}] - 2026-09-25\n", f"## [{self.value}] - 2026-09-25\n- one\n## [{self.value}] - 2026-09-25\n- two"]:
             with self.subTest(text=text):
-                (self.root / "CHANGELOG.md").write_text(text)
+                (self.root / "README.md").write_text(text)
                 with self.assertRaises(ValueError):
                     release.validate(self.tag)
 

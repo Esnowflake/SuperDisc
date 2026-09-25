@@ -82,8 +82,9 @@ public final class DiscScreen extends Screen {
         boolean busy=choosing||ClientPlayback.importing(key)||l.preparing||l.uploadOffset>=0;
         pick.active=!choosing;play.active=!busy;pause.active=t.playing||t.syncing;restart.active=!busy&&!t.hash.isEmpty();
     }
-    @Override public void render(GuiGraphics g,int mouseX,int mouseY,float partial){
-        renderBackground(g,mouseX,mouseY,partial);g.fill(left,top,left+w,top+266,0xF0202529);g.fill(left,top,left+w,top+2,0xFFFFCC44);
+    // Screen.render draws this background once, then the interactive widgets.
+    @Override public void renderBackground(GuiGraphics g,int mouseX,int mouseY,float partial){
+        renderTransparentBackground(g);g.fill(left,top,left+w,top+266,0xF0202529);g.fill(left,top,left+w,top+2,0xFFFFCC44);
         g.drawCenteredString(font,title,left+w/2,top+10,0xFFFFCC44);g.drawString(font,"音频文件路径（MP3 / Ogg Vorbis）",left+10,top+29,0xFFE0E0E0);
         var l=ClientPlayback.get(key);if(l!=null){
             Track t=l.track;boolean owner=minecraft.player!=null&&t.owner.equals(minecraft.player.getUUID());
@@ -92,7 +93,6 @@ public final class DiscScreen extends Screen {
             String status=t.syncing?"等待所有收听者同步完成":t.playing?"正在播放":ClientPlayback.importing(key)?"正在校验文件并自动同步…":l.status;
             g.drawString(font,font.plainSubstrByWidth(status,w-20),left+10,top+244,0xFF88DDCC);
         }
-        super.render(g,mouseX,mouseY,partial);
     }
     private static String format(double seconds){int s=Math.max(0,(int)seconds);return String.format("%02d:%02d",s/60,s%60);}
     @Override public boolean isPauseScreen(){return false;}

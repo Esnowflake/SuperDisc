@@ -31,3 +31,10 @@ tasks.register('runtimeContracts', JavaExec) {
     mainClass = '../tools/Minecraft121Checks.java'
 }
 tasks.named('check').configure { dependsOn 'runtimeContracts' }
+tasks.register('screenRenderContracts', JavaExec) {
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = '../tools/ScreenRenderChecks.java'
+    args '1.21.1'
+}
+tasks.named('check').configure { dependsOn 'screenRenderContracts' }

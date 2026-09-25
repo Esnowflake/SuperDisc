@@ -82,8 +82,10 @@ public final class DiscScreen extends Screen {
         boolean busy=choosing||ClientPlayback.importing(key)||l.preparing||l.uploadOffset>=0;
         pick.active=!choosing;play.active=!busy;pause.active=t.playing||t.syncing;restart.active=!busy&&!t.hash.isEmpty();
     }
+    // The wrapper draws the in-game dim once and preserves deferred subtitles.
+    @Override public boolean isInGameUi(){return true;}
     @Override public void extractRenderState(GuiGraphicsExtractor g,int mouseX,int mouseY,float partial){
-        extractBackground(g,mouseX,mouseY,partial);g.fill(left,top,left+w,top+266,0xF0202529);g.fill(left,top,left+w,top+2,0xFFFFCC44);
+        g.fill(left,top,left+w,top+266,0xF0202529);g.fill(left,top,left+w,top+2,0xFFFFCC44);
         g.centeredText(font,title,left+w/2,top+10,0xFFFFCC44);g.text(font,"音频文件路径（MP3 / Ogg Vorbis）",left+10,top+29,0xFFE0E0E0);
         var l=ClientPlayback.get(key);if(l!=null){
             Track t=l.track;boolean owner=minecraft.player!=null&&t.owner.equals(minecraft.player.getUUID());

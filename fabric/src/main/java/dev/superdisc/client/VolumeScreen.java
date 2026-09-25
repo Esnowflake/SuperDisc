@@ -55,8 +55,10 @@ public final class VolumeScreen extends Screen {
             if(next!=offset){offset=next;rebuild();}return true;
         }return super.mouseScrolled(x,y,horizontal,delta);
     }
+    // The wrapper draws the in-game dim once and preserves deferred subtitles.
+    @Override public boolean isInGameUi(){return true;}
     @Override public void extractRenderState(GuiGraphicsExtractor g,int mx,int my,float partial){
-        extractBackground(g,mx,my,partial);g.fill(left,top,left+w,top+h,0xF0182028);g.fill(left,top,left+w,top+3,0xFFFFCB57);
+        g.fill(left,top,left+w,top+h,0xF0182028);g.fill(left,top,left+w,top+3,0xFFFFCB57);
         g.text(font,title,left+13,top+13,0xFFFFDC82);
         g.text(font,"为每位玩家单独设置这台唱片机的音量",left+13,top+31,0xFFB9C9D8);
         g.text(font,"保护已开启的玩家仅可自行调整",left+13,top+45,0xFF8195A8);

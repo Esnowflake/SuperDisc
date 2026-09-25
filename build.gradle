@@ -40,6 +40,13 @@ tasks.register('coreRegression', JavaExec) {
     mainClass = 'tools/RegressionChecks.java'
 }
 tasks.named('check').configure { dependsOn 'coreRegression' }
+tasks.register('screenRenderContracts', JavaExec) {
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'tools/ScreenRenderChecks.java'
+    args '1.20.1'
+}
+tasks.named('check').configure { dependsOn 'screenRenderContracts' }
 processResources {
     inputs.property 'version', project.version
     filesMatching('META-INF/mods.toml') { expand version: project.version }

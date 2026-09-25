@@ -11,24 +11,24 @@
 | 1.20.1 | Forge 47.2.0+（47.x） | 17 | 原有平台；本分支完整构建及核心回归通过 |
 | 1.21.1 | Forge 52.1.16+（52.x） | 21 | 实验性移植；构建通过，游戏验收待完成 |
 | 1.21.1 | NeoForge 21.1.251+（21.1.x） | 21 | 实验性移植；构建通过，游戏验收待完成 |
-| 1.21.1 | Fabric Loader 0.19.5+、Fabric API 0.116.17+1.21.1 | 21 | 实验性移植；构建通过，游戏验收待完成 |
+| 1.21.1 | Fabric Loader 0.19.5+、Fabric API 0.116.17+1.21.1 | 21 | 实验性移植；GUI 模糊修复已反馈通过，完整游戏验收待完成 |
 | 26.2 | Fabric Loader 0.19.5+、Fabric API 0.161.0+26.2 | 25 | 实验性移植；构建及静态检查通过，游戏内验收待完成 |
 
-当前测试版本：`2.1.0-alpha.2`。客户端与服务器必须安装相同平台、Minecraft 版本及模组版本。
-这些目标不是跨版本或跨 Loader 联机桥梁，不承诺互相连接。游戏内、双客户端及旧存档迁移验收状态见 [TESTING.md](TESTING.md)。
+当前测试版本：`2.1.0-alpha.3`。客户端与服务器必须安装相同平台、Minecraft 版本及模组版本。
+这些目标不是跨版本或跨 Loader 联机桥梁，不承诺互相连接。音频设备、专用服务端、双客户端同步及旧存档迁移仍需完整验收；GUI 修复确认不代表这些项目均已通过。
 
 ## 安装
 
 从对应 Release 选择一个安装包，放入游戏或服务器的 `mods` 目录：
 
-- Forge 1.20.1：`super-disc-2.1.0-alpha.2+mc1.20.1-forge.jar`
-- Forge 1.21.1：`super-disc-2.1.0-alpha.2+mc1.21.1-forge.jar`
-- NeoForge 1.21.1：`super-disc-2.1.0-alpha.2+mc1.21.1-neoforge.jar`
-- Fabric 1.21.1：`super-disc-2.1.0-alpha.2+mc1.21.1-fabric.jar`，另装匹配的 Fabric API。
-- Fabric 26.2：`super-disc-2.1.0-alpha.2+mc26.2-fabric.jar`，另装匹配的 Fabric API。
+- Forge 1.20.1：`super-disc-2.1.0-alpha.3+mc1.20.1-forge.jar`
+- Forge 1.21.1：`super-disc-2.1.0-alpha.3+mc1.21.1-forge.jar`
+- NeoForge 1.21.1：`super-disc-2.1.0-alpha.3+mc1.21.1-neoforge.jar`
+- Fabric 1.21.1：`super-disc-2.1.0-alpha.3+mc1.21.1-fabric.jar`，另装匹配的 Fabric API。
+- Fabric 26.2：`super-disc-2.1.0-alpha.3+mc26.2-fabric.jar`，另装匹配的 Fabric API。
 
 JLayer MP3 解码库已内嵌，不需额外安装。不要同时装入多个平台包，也不要安装 sources 或开发中间包。
-本地构建的 Forge 安装包带有 `-all.jar` 后缀，详见 [构建文档](docs/BUILDING.md)。
+本地构建的 Forge 安装包带有 `-all.jar` 后缀，不要安装不带该后缀的开发输出。
 发布包附带 `SHA256SUMS.txt`，可用 `Get-FileHash` 或 `sha256sum` 校验。
 
 ## 使用
@@ -68,13 +68,51 @@ JLayer MP3 解码库已内嵌，不需额外安装。不要同时装入多个平
 - 失败或超时会暂停并提示；首次同步、解码速度受网络和设备影响。
 - Fabric 使用独立的版本适配，未承诺读取 Forge 的历史存档数据。
 
-## 开发与反馈
+## 构建与验证
 
-- [构建与验证](docs/BUILDING.md)
-- [贡献规范](CONTRIBUTING.md)
-- [草稿发布流程](docs/RELEASING.md)
-- [更新日志](CHANGELOG.md)
-- [游戏验收清单](TESTING.md)
+版本统一维护在 `gradle.properties` 的 `mod_version`，五个目标由 `scripts/targets.json` 定义。
+Forge 1.20.1 使用 JDK 17，三个 1.21.1 目标使用 JDK 21，Fabric 26.2 使用 JDK 25。
+安装完整 JDK 和 Python 3.11+，在仓库根目录执行：
+
+```powershell
+.\build.ps1 -Target forge-1.20.1 -JavaHome $env:JDK17_HOME
+.\build.ps1 -Target forge-1.21.1 -JavaHome $env:JDK21_HOME
+.\build.ps1 -Target neoforge-1.21.1 -JavaHome $env:JDK21_HOME
+.\build.ps1 -Target fabric-1.21.1 -JavaHome $env:JDK21_HOME
+.\build.ps1 -Target fabric-26.2 -JavaHome $env:JDK25_HOME
+python -m unittest discover -s scripts -p 'test_*.py' -v
+```
+
+Windows 下将仓库放在非 C 盘。脚本使用 UTF-8，将 Gradle 缓存和临时文件放在仓库的 `.gradle-home/`、`.tmp/`，禁用 JDK 自动下载。
+需要代理时增加 `-Proxy $env:HTTPS_PROXY`，传入 HTTP 代理地址；脚本同时配置 shell 和 Java 代理，不保存个人地址。
+Linux 可在选择对应 JDK 后运行各工程的 Wrapper；CI 和 Release 已自动配置工具链、矩阵及缓存目录。
+
+五个 `build` 均执行核心回归与编译后 GUI 绘制顺序检查；1.21.1 和 Fabric 26.2 另检查存档及声音接口。
+最终安装包还会验证元数据、资源、Java 字节码、映射及内嵌依赖。这些检查不替代游戏实测。
+复测时使用独立测试世界，检查主界面和音量管理页、MP3/Ogg 播放与循环、进度和音量权限、取消同步、重连、服务器重启及双客户端同步。
+不要将缓存、日志、存档、凭据或玩家音频提交到仓库。
+
+## 发布
+
+1. 更新根 `mod_version`，在 README 中添加唯一的 `## [版本] - YYYY-MM-DD` 变更摘要。
+2. 完成五个目标的本地构建与测试，合入 `main` 并确认 CI 通过。
+3. 推送与版本匹配的新附注标签，如 `v2.1.0-alpha.3`；不要移动旧标签。
+4. GitHub Actions 从标签源码重建全部目标，校验并汇总五个 JAR 与 `SHA256SUMS.txt`，生成 Draft Release。
+5. 检查附件及测试范围后，由维护者发布草稿；带 alpha、beta 或 rc 后缀的版本保留 Pre-release 标记。
+
+工作流要求标签提交属于 `main`。上传重跑只补齐缺失附件，相同附件逐字节核对；不同内容或已发布的 Release 会被拒绝修改。
+自动化始终先生成草稿，不会自行公开。后续同一矩阵的版本可复用此流程；新增 Minecraft 目标需要实际移植和测试，不能仅修改包名。
+本地可用 `python scripts/release.py validate v2.1.0-alpha.3` 检查版本与发行摘要。
+
+## 反馈与许可
 
 反馈时附上 Minecraft、Loader、Java 和模组版本，以及已去除个人信息的相关日志。
 项目保留原有 All Rights Reserved 声明；JLayer 的 LGPL 许可证及源码归档随安装包提供。
+
+## [2.1.0-alpha.3] - 2026-09-25
+
+- 修复 1.21.1 Fabric、Forge、NeoForge 的主界面和多人音量页重复绘制背景，避免模糊覆盖文字。
+- 移除 Fabric 26.2 的重复背景调用，使用不模糊的游戏内背景并保留字幕处理。
+- Forge 1.20.1 未发现该问题，保持现有渲染行为；五个构建目标均增加编译后绘制顺序回归检查。
+- Fabric 1.21.1 的 GUI 修复已收到用户复测通过反馈；其余平台画面和完整音频、服务端、联机验收不据此宣称通过。
+- 文档合并至 README，保留可复用的五目标云端构建、草稿审核与发布流程，以及必要许可证和第三方声明。

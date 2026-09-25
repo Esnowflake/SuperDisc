@@ -55,8 +55,9 @@ public final class VolumeScreen extends Screen {
             if(next!=offset){offset=next;rebuild();}return true;
         }return super.mouseScrolled(x,y,horizontal,delta);
     }
-    @Override public void render(GuiGraphics g,int mx,int my,float partial){
-        renderBackground(g,mx,my,partial);g.fill(left,top,left+w,top+h,0xF0182028);g.fill(left,top,left+w,top+3,0xFFFFCB57);
+    // Screen.render draws this background once, then the interactive widgets.
+    @Override public void renderBackground(GuiGraphics g,int mx,int my,float partial){
+        renderTransparentBackground(g);g.fill(left,top,left+w,top+h,0xF0182028);g.fill(left,top,left+w,top+3,0xFFFFCB57);
         g.drawString(font,title,left+13,top+13,0xFFFFDC82);
         g.drawString(font,"为每位玩家单独设置这台唱片机的音量",left+13,top+31,0xFFB9C9D8);
         g.drawString(font,"保护已开启的玩家仅可自行调整",left+13,top+45,0xFF8195A8);
@@ -78,7 +79,6 @@ public final class VolumeScreen extends Screen {
         }
         String footer=list.size()+" 位在线玩家 · 滚轮翻动";
         g.drawString(font,footer,left+w-12-font.width(footer),top+h-22,0xFF98ADBE);
-        super.render(g,mx,my,partial);
     }
     @Override public void onClose(){returning=true;ClientPlayback.watchVolumes(key,false);minecraft.setScreen(new DiscScreen(key));}
     @Override public void removed(){if(!returning){ClientPlayback.watchVolumes(key,false);Net.toServer("close",new net.minecraft.nbt.CompoundTag());}}

@@ -44,7 +44,7 @@ def validate(tag):
 
 
 def notes(value):
-    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
     headings = list(re.finditer(r"^## (.+)$", text, re.M))
     matches = [i for i, h in enumerate(headings) if re.fullmatch(rf"\[{re.escape(value)}\] - \d{{4}}-\d{{2}}-\d{{2}}", h[1])]
     require(len(matches) == 1, "Expected one dated changelog section")

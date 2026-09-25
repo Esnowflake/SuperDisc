@@ -38,3 +38,10 @@ tasks.register('fabricRegression', JavaExec) {
     mainClass = '../tools/FabricChecks.java'
 }
 tasks.named('check').configure { dependsOn 'coreRegression', 'fabricRegression' }
+tasks.register('screenRenderContracts', JavaExec) {
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = '../tools/ScreenRenderChecks.java'
+    args '26.2'
+}
+tasks.named('check').configure { dependsOn 'screenRenderContracts' }
