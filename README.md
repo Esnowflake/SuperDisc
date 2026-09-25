@@ -8,7 +8,7 @@
 
 播放控制界面：
 
-![超级唱片播放控制界面，可调整进度、音量和防失真设置；本机路径已隐藏](assets/screenshots/playback-controls.png)
+![超级唱片播放控制界面，可调整进度、音量和防失真设置；使用示例文件路径](assets/screenshots/playback-controls.png)
 
 创造模式物品栏：
 
