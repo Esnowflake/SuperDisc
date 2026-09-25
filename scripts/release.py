@@ -148,7 +148,7 @@ def release_body(value):
     lines += [f'- {t["id"]}: {t["dependencies"]}.' for t in targets()]
     lines += ["", "Use the same Minecraft version and loader on every client and the server. Cross-loader connectivity is not supported. Existing Forge 2.0.0 worlds have not been migration-tested.",
               "Compilation, core regression tests and static package checks are not in-game or multiplayer acceptance.",
-              "New ports are experimental. Keep this release as a draft until manual acceptance is complete.",
+              "New ports are experimental. This release is intended for testing; manual acceptance is incomplete.",
               "", "## Verification", "", "Download all target JARs and SHA256SUMS.txt, then run `sha256sum -c SHA256SUMS.txt`.",
               "For one JAR, compare `Get-FileHash <downloaded.jar> -Algorithm SHA256` with its exact line in SHA256SUMS.txt.",
               "Do not install sources, development JARs or both loader variants."]
