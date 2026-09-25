@@ -1,0 +1,11 @@
+plugins { id 'net.neoforged.moddev' version '2.0.147' }
+apply from: '../gradle/common-1.21.1.gradle'
+base { archivesName = 'super-disc-neoforge-1.21.1' }
+neoForge {
+    version = '21.1.251'
+    mods { super_disc { sourceSet sourceSets.main } }
+}
+dependencies {
+    implementation 'javazoom:jlayer:1.0.1'
+    jarJar('javazoom:jlayer:1.0.1')
+}

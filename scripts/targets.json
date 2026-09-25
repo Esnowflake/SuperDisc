@@ -1,0 +1,77 @@
+{
+  "include": [
+    {
+      "id": "forge-1.20.1",
+      "loader": "forge",
+      "minecraft": "1.20.1",
+      "java": "17",
+      "project": ".",
+      "wrapper": "./gradlew",
+      "artifact": "build/libs/super-disc-forge-1.20.1-{version}-all.jar",
+      "loader_range": "[47,)",
+      "minecraft_range": "[1.20.1,1.20.2)",
+      "pack_format": 15,
+      "runtime_mappings": "srg",
+      "status": "build-tested; game acceptance pending",
+      "dependencies": "Forge 47.2.0 or later in the 47.x series; JLayer is bundled"
+    },
+    {
+      "id": "fabric-26.2",
+      "loader": "fabric",
+      "minecraft": "26.2",
+      "java": "25",
+      "project": "fabric",
+      "wrapper": "./fabric/gradlew",
+      "artifact": "fabric/build/libs/super-disc-fabric-26.2-{version}.jar",
+      "loader_range": ">=0.19.5",
+      "api_range": ">=0.161.0+26.2",
+      "runtime_mappings": "official",
+      "status": "experimental; game acceptance pending",
+      "dependencies": "Fabric Loader 0.19.5+ and Fabric API 0.161.0+26.2; JLayer is bundled"
+    },
+    {
+      "id": "forge-1.21.1",
+      "loader": "forge",
+      "minecraft": "1.21.1",
+      "java": "21",
+      "project": "forge-1.21.1",
+      "wrapper": "./forge-1.21.1/gradlew",
+      "artifact": "forge-1.21.1/build/libs/super-disc-forge-1.21.1-{version}-all.jar",
+      "loader_range": "[52,)",
+      "minecraft_range": "[1.21.1,1.21.2)",
+      "pack_format": 34,
+      "runtime_mappings": "official",
+      "status": "experimental; game acceptance pending",
+      "dependencies": "Forge 52.1.16+ (52.x); JLayer is bundled"
+    },
+    {
+      "id": "neoforge-1.21.1",
+      "loader": "neoforge",
+      "minecraft": "1.21.1",
+      "java": "21",
+      "project": "neoforge-1.21.1",
+      "wrapper": "./neoforge-1.21.1/gradlew",
+      "artifact": "neoforge-1.21.1/build/libs/super-disc-neoforge-1.21.1-{version}.jar",
+      "loader_range": "[4,)",
+      "minecraft_range": "[1.21.1,1.21.2)",
+      "pack_format": 34,
+      "runtime_mappings": "official",
+      "status": "experimental; game acceptance pending",
+      "dependencies": "NeoForge 21.1.251+ (21.1.x); JLayer is bundled"
+    },
+    {
+      "id": "fabric-1.21.1",
+      "loader": "fabric",
+      "minecraft": "1.21.1",
+      "java": "21",
+      "project": "fabric-1.21.1",
+      "wrapper": "./fabric-1.21.1/gradlew",
+      "artifact": "fabric-1.21.1/build/libs/super-disc-fabric-1.21.1-{version}.jar",
+      "loader_range": ">=0.19.5",
+      "api_range": ">=0.116.17+1.21.1",
+      "runtime_mappings": "intermediary",
+      "status": "experimental; game acceptance pending",
+      "dependencies": "Fabric Loader 0.19.5+ and Fabric API 0.116.17+1.21.1; JLayer is bundled"
+    }
+  ]
+}

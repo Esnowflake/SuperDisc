@@ -6,9 +6,10 @@ import javax.tools.ToolProvider;
 public class RegressionChecks {
     public static void main(String[] args)throws Exception {
         Path project=Path.of("").toAbsolutePath().normalize();
+        boolean fabric=args.length>0&&args[0].equals("fabric");
         Path temp=Files.createTempDirectory("super-disc-tests-").toAbsolutePath().normalize();
         try {
-            Map<String,String> stubs=Map.of(
+            Map<String,String> stubs=new HashMap<>(Map.of(
                 "net/minecraftforge/fml/loading/FMLPaths.java", """
                     package net.minecraftforge.fml.loading;
                     public class FMLPaths {
@@ -22,7 +23,23 @@ public class RegressionChecks {
                     """,
                 "dev/superdisc/Net.java", "package dev.superdisc; public class Net {public static final int CHUNK=16384;}",
                 "dev/superdisc/Track.java", "package dev.superdisc; public class Track {public long size;public String hash,name,extension;}"
-            );
+            ));
+            if(fabric){
+                stubs.remove("net/minecraftforge/fml/loading/FMLPaths.java");
+                stubs.put("net/fabricmc/loader/api/FabricLoader.java", """
+                    package net.fabricmc.loader.api;
+                    public class FabricLoader {
+                        public static FabricLoader getInstance(){return new FabricLoader();}
+                        public java.nio.file.Path getGameDir(){return java.nio.file.Path.of(System.getProperty("test.cache"));}
+                    }
+                    """);
+            }
+            if(args.length>0&&args[0].equals("shared")){
+                stubs.put("dev/superdisc/Platform.java", """
+                    package dev.superdisc;
+                    public class Platform {public static java.nio.file.Path gameDir(){return java.nio.file.Path.of(System.getProperty("test.cache"));}}
+                    """);
+            }
             List<String> files=new ArrayList<>();
             for(var entry:stubs.entrySet()){Path p=temp.resolve(entry.getKey());Files.createDirectories(p.getParent());Files.writeString(p,entry.getValue());files.add(p.toString());}
             for(String file:List.of("Cache.java","WorkToken.java","VolumePolicy.java","client/AudioPath.java","client/PcmReader.java","client/PcmGain.java","client/PlaybackCursor.java"))files.add(project.resolve("src/main/java/dev/superdisc/"+file).toString());

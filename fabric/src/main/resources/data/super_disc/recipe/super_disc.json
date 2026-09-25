@@ -1,0 +1,7 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": ["GGG", "GEG", "GGG"],
+  "key": {"G": "minecraft:gold_ingot", "E": "minecraft:emerald"},
+  "result": {"id": "super_disc:super_disc", "count": 1}
+}

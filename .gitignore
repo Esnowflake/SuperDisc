@@ -4,7 +4,16 @@
 build/
 run/
 run-server/
-super_disc/
+/super_disc/
 logs/
 
 *.log
+.gradle-home/
+.tmp/
+.jdks/
+release/
+fabric/.gradle/
+fabric/build/
+__pycache__/
+**/.gradle/
+**/build/

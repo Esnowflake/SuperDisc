@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "super_disc",
+  "version": "${version}",
+  "name": "Super Disc",
+  "description": "Shared MP3 and Ogg Vorbis playback through vanilla jukeboxes.",
+  "license": "All Rights Reserved",
+  "environment": "*",
+  "mixins": [
+    {"config": "super_disc.client.mixins.json", "environment": "client"}
+  ],
+  "entrypoints": {
+    "main": ["dev.superdisc.SuperDisc"],
+    "client": ["dev.superdisc.client.ClientEvents"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "26.2",
+    "java": ">=25",
+    "fabric-api": ">=0.161.0+26.2"
+  }
+}

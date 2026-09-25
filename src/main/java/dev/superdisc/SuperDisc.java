@@ -28,7 +28,7 @@ public final class SuperDisc {
         bus.addListener(this::creative);
         Net.register();
         MinecraftForge.EVENT_BUS.register(ServerPlayback.class);
-        LOG.info("Super Disc 1.0.0 initialized; shared MP3 / Ogg Vorbis, cache {}", Cache.root());
+        LOG.info("Super Disc initialized; shared MP3 / Ogg Vorbis, cache {}", Cache.root());
     }
     private void creative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey().equals(CreativeModeTabs.TOOLS_AND_UTILITIES)) event.accept(DISC.get());

@@ -1,0 +1,40 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.17.21'
+}
+def shared = new Properties()
+file('../gradle.properties').withInputStream { shared.load(it) }
+version = shared.getProperty('mod_version')
+group = 'dev.superdisc'
+base { archivesName = 'super-disc-fabric-26.2' }
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+repositories { mavenCentral() }
+dependencies {
+    minecraft 'com.mojang:minecraft:26.2'
+    implementation 'net.fabricmc:fabric-loader:0.19.5'
+    implementation 'net.fabricmc.fabric-api:fabric-api:0.161.0+26.2'
+    implementation 'javazoom:jlayer:1.0.1'
+    include 'javazoom:jlayer:1.0.1'
+}
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand version: project.version }
+}
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+tasks.register('coreRegression', JavaExec) {
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+    mainClass = '../tools/RegressionChecks.java'
+    args 'fabric'
+}
+tasks.register('fabricRegression', JavaExec) {
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = '../tools/FabricChecks.java'
+}
+tasks.named('check').configure { dependsOn 'coreRegression', 'fabricRegression' }

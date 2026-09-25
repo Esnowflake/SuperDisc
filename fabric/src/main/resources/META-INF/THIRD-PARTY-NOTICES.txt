@@ -1,0 +1,7 @@
+Super Disc includes JLayer 1.0.1 as an unmodified, separately loadable nested JAR.
+JLayer is Copyright its respective authors (JavaZoom / contributors).
+License: GNU Library General Public License version 2 or (at your option) any later version.
+Project: http://www.javazoom.net/javalayer/javalayer.html
+Exact source artifact: https://repo.maven.apache.org/maven2/javazoom/jlayer/1.0.1/jlayer-1.0.1-sources.jar
+The source archive and license are included under META-INF/licenses/ in this distribution.
+No warranty is provided by JLayer. Its license remains applicable independently of this mod's own code.

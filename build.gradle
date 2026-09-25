@@ -1,9 +1,9 @@
 plugins {
     id 'idea'
-    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'net.minecraftforge.gradle' version '6.0.54'
 }
 group = 'dev.superdisc'
-version = '2.0.0'
+version = project.mod_version
 base { archivesName = 'super-disc-forge-1.20.1' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 jarJar.enable()
@@ -34,3 +34,17 @@ tasks.withType(JavaCompile).configureEach {
 }
 tasks.named('jar').configure { finalizedBy 'reobfJar' }
 tasks.named('jarJar').configure { finalizedBy 'reobfJarJar' }
+tasks.named('build').configure { dependsOn 'jarJar' }
+tasks.register('coreRegression', JavaExec) {
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+    mainClass = 'tools/RegressionChecks.java'
+}
+tasks.named('check').configure { dependsOn 'coreRegression' }
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/mods.toml') { expand version: project.version }
+}
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}

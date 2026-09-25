@@ -1,26 +1,41 @@
-param([string]$JavaHome = 'D:\Program Files\JDK-17')
+param(
+    [string]$Target = 'forge-1.20.1',
+    [string]$JavaHome = $env:JAVA_HOME,
+    [string]$Proxy
+)
 $ErrorActionPreference = 'Stop'
-Set-Location -LiteralPath $PSScriptRoot
-if(!(Test-Path -LiteralPath (Join-Path $JavaHome 'bin/javac.exe'))) { throw "JDK 17 not found: $JavaHome" }
-$env:JAVA_HOME = $JavaHome
-$env:Path = "$JavaHome\bin;$env:Path"
 $utf8 = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
-& "$PSScriptRoot/tools/verify-resources.ps1"
-& "$PSScriptRoot/gradlew.bat" clean jarJar --no-daemon --console=plain 2>&1 | Tee-Object -FilePath "$PSScriptRoot/build-output.log"
-if($LASTEXITCODE -ne 0) { throw 'Build failed. See build-output.log.' }
-$artifact=Join-Path $PSScriptRoot 'build/libs/super-disc-forge-1.20.1-2.0.0-all.jar'
-if(!(Test-Path -LiteralPath $artifact)) { throw 'Bundled JAR not produced.' }
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zip=[System.IO.Compression.ZipFile]::OpenRead($artifact)
+$names = @('JAVA_HOME','PATH','GRADLE_USER_HOME','TEMP','TMP','JAVA_TOOL_OPTIONS','HTTP_PROXY','HTTPS_PROXY')
+$saved = @{}
+foreach ($name in $names) { $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+Push-Location $PSScriptRoot
 try {
-    foreach($entry in @('META-INF/mods.toml','META-INF/jarjar/metadata.json','dev/superdisc/SuperDisc.class','assets/super_disc/models/item/super_disc.json','assets/super_disc/textures/item/super_disc.png','data/super_disc/recipes/super_disc.json','pack.mcmeta')) {
-        if(!$zip.GetEntry($entry)){throw "Missing JAR entry: $entry"}
+    if (!$JavaHome -or !(Test-Path -LiteralPath "$JavaHome/bin/javac.exe")) { throw 'Supply -JavaHome with a full JDK path.' }
+    $env:JAVA_HOME = $JavaHome
+    $env:PATH = "$JavaHome/bin;$env:PATH"
+    $env:GRADLE_USER_HOME = Join-Path $PSScriptRoot '.gradle-home'
+    $env:TEMP = $env:TMP = Join-Path $PSScriptRoot '.tmp'
+    foreach ($path in @($env:GRADLE_USER_HOME,$env:TEMP)) {
+        if ([IO.Path]::GetPathRoot($path) -eq 'C:\') { throw 'Build cache and temporary directories must not be on C:.' }
+        New-Item -ItemType Directory -Force -Path $path | Out-Null
     }
-    if(!($zip.Entries | Where-Object { $_.FullName -match 'META-INF/jarjar/.*jlayer.*\.jar$' })) { throw 'JLayer MP3 decoder is missing from the bundled JAR.' }
-    $reader=[System.IO.StreamReader]::new($zip.GetEntry('pack.mcmeta').Open())
-    try { $pack=$reader.ReadToEnd() | ConvertFrom-Json; if($pack.pack.pack_format -ne 15){throw 'Invalid packed metadata'} } finally {$reader.Dispose()}
-} finally {$zip.Dispose()}
-Write-Host "Verified artifact: $artifact" -ForegroundColor Green
-Get-FileHash -LiteralPath $artifact -Algorithm SHA256
+    $env:JAVA_TOOL_OPTIONS = "$env:JAVA_TOOL_OPTIONS -Djava.io.tmpdir=$env:TEMP"
+    if ($Proxy) {
+        $uri = [uri]$Proxy
+        if ($uri.Scheme -ne 'http' -or !$uri.Host -or $uri.UserInfo) { throw 'Use an HTTP proxy URL without credentials.' }
+        $env:HTTP_PROXY = $env:HTTPS_PROXY = $Proxy
+        $env:JAVA_TOOL_OPTIONS += " -Dhttp.proxyHost=$($uri.Host) -Dhttp.proxyPort=$($uri.Port) -Dhttps.proxyHost=$($uri.Host) -Dhttps.proxyPort=$($uri.Port)"
+    }
+    $matrix = Get-Content -Raw -Encoding UTF8 "$PSScriptRoot/scripts/targets.json" | ConvertFrom-Json
+    $selected = @($matrix.include | Where-Object id -EQ $Target)
+    if ($selected.Count -ne 1) { throw "Unsupported target: $Target" }
+    $project = $selected[0].project
+    $wrapper = "./$project/gradlew.bat"
+    & $wrapper --project-dir $project --no-daemon --console=plain clean build
+    if ($LASTEXITCODE -ne 0) { throw "Build failed: $Target" }
+} finally {
+    Pop-Location
+    foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process') }
+}
