@@ -219,6 +219,42 @@ class ReleaseTests(unittest.TestCase):
                 publish.publish(api, self.tag, output)
         self.assertIsNone(api.release)
 
+    def test_new_draft_not_yet_in_list(self):
+        output = self.assembled()
+        api = FakeGitHub()
+        with patch.object(api, "releases", return_value=[]) as query:
+            publish.publish(api, self.tag, output)
+            self.assertEqual(query.call_count, 1)
+        self.assertTrue(api.release["draft"])
+        self.assertEqual(api.uploads, len(release.targets()) + 1)
+
+    def test_draft_published_during_upload(self):
+        output = self.assembled()
+        api = FakeGitHub()
+        original = api.get_release
+        def changed(release_id):
+            item = original(release_id)
+            item["draft"] = False
+            return item
+        with patch.object(api, "get_release", side_effect=changed):
+            with self.assertRaises(ValueError):
+                publish.publish(api, self.tag, output)
+        self.assertEqual(api.uploads, 0)
+
+    def test_uploaded_assets_list_lags(self):
+        output = self.assembled()
+        api = FakeGitHub()
+        original = api.assets
+        queries = 0
+        def lagging(release_id):
+            nonlocal queries
+            queries += 1
+            return [] if queries < 3 else original(release_id)
+        with patch.object(api, "assets", side_effect=lagging), patch.object(publish.time, "sleep") as sleep:
+            publish.publish(api, self.tag, output)
+            self.assertEqual(sleep.call_count, 1)
+        self.assertEqual(api.uploads, len(release.targets()) + 1)
+
     def test_pagination(self):
         api = publish.GitHub("owner/repo")
         with patch.object(api, "api", side_effect=[[{"id": i} for i in range(100)], [{"id": 100}]]) as call:
@@ -227,6 +263,19 @@ class ReleaseTests(unittest.TestCase):
         with patch.object(api, "api", side_effect=subprocess.CalledProcessError(1, "gh")):
             with self.assertRaises(subprocess.CalledProcessError):
                 api.releases()
+
+    def test_upload_uses_known_id(self):
+        api = publish.GitHub("owner/repo")
+        path = self.root / "mod+mc1.21.1.jar"
+        with patch.object(api, "get_release", return_value={"draft": True, "upload_url": "https://uploads.github.com/repos/owner/repo/releases/7/assets{?name,label}"}), patch.object(subprocess, "run") as run:
+            api.upload(7, path)
+            command = run.call_args.args[0]
+            self.assertIn("https://uploads.github.com/repos/owner/repo/releases/7/assets?name=mod%2Bmc1.21.1.jar", command)
+            self.assertIn(str(path), command)
+        with patch.object(api, "get_release", return_value={"draft": False}), patch.object(subprocess, "run") as run:
+            with self.assertRaises(ValueError):
+                api.upload(7, path)
+            run.assert_not_called()
 
 
 class FakeGitHub:
@@ -246,10 +295,15 @@ class FakeGitHub:
     def assets(self, release_id):
         return [{"id": n, "name": n} for n in self.data]
 
+    def get_release(self, release_id):
+        if self.release is None or self.release["id"] != release_id:
+            raise RuntimeError("Release disappeared")
+        return self.release
+
     def download(self, asset_id):
         return self.data[asset_id]
 
-    def upload(self, tag, path):
+    def upload(self, release_id, path):
         if self.fail_after == self.uploads:
             raise RuntimeError("interrupted upload")
         self.data[path.name] = path.read_bytes()

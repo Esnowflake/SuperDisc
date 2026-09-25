@@ -60,13 +60,13 @@ Shell 的 `HTTPS_PROXY` 不等于 Java 代理设置；需要代理的 Java 进�
 
 ## 产物
 
-当前版本 `2.1.0-alpha.1`：
+当前版本 `2.1.0-alpha.2`：
 
-- Forge 1.20.1：`build/libs/super-disc-forge-1.20.1-2.1.0-alpha.1-all.jar`
-- Forge 1.21.1：`forge-1.21.1/build/libs/super-disc-forge-1.21.1-2.1.0-alpha.1-all.jar`
-- NeoForge 1.21.1：`neoforge-1.21.1/build/libs/super-disc-neoforge-1.21.1-2.1.0-alpha.1.jar`
-- Fabric 1.21.1：`fabric-1.21.1/build/libs/super-disc-fabric-1.21.1-2.1.0-alpha.1.jar`
-- Fabric 26.2：`fabric/build/libs/super-disc-fabric-26.2-2.1.0-alpha.1.jar`
+- Forge 1.20.1：`build/libs/super-disc-forge-1.20.1-2.1.0-alpha.2-all.jar`
+- Forge 1.21.1：`forge-1.21.1/build/libs/super-disc-forge-1.21.1-2.1.0-alpha.2-all.jar`
+- NeoForge 1.21.1：`neoforge-1.21.1/build/libs/super-disc-neoforge-1.21.1-2.1.0-alpha.2.jar`
+- Fabric 1.21.1：`fabric-1.21.1/build/libs/super-disc-fabric-1.21.1-2.1.0-alpha.2.jar`
+- Fabric 26.2：`fabric/build/libs/super-disc-fabric-26.2-2.1.0-alpha.2.jar`
 
 不要安装 Forge 不带 `-all` 的开发输出。
 五个安装包均包含 JLayer、对应 LGPL 许可证和源码归档；不需要额外安装 JLayer。

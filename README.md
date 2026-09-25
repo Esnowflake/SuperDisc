@@ -14,18 +14,18 @@
 | 1.21.1 | Fabric Loader 0.19.5+、Fabric API 0.116.17+1.21.1 | 21 | 实验性移植；构建通过，游戏验收待完成 |
 | 26.2 | Fabric Loader 0.19.5+、Fabric API 0.161.0+26.2 | 25 | 实验性移植；构建及静态检查通过，游戏内验收待完成 |
 
-当前测试版本：`2.1.0-alpha.1`。客户端与服务器必须安装相同平台、Minecraft 版本及模组版本。
+当前测试版本：`2.1.0-alpha.2`。客户端与服务器必须安装相同平台、Minecraft 版本及模组版本。
 这些目标不是跨版本或跨 Loader 联机桥梁，不承诺互相连接。游戏内、双客户端及旧存档迁移验收状态见 [TESTING.md](TESTING.md)。
 
 ## 安装
 
 从对应 Release 选择一个安装包，放入游戏或服务器的 `mods` 目录：
 
-- Forge 1.20.1：`super-disc-2.1.0-alpha.1+mc1.20.1-forge.jar`
-- Forge 1.21.1：`super-disc-2.1.0-alpha.1+mc1.21.1-forge.jar`
-- NeoForge 1.21.1：`super-disc-2.1.0-alpha.1+mc1.21.1-neoforge.jar`
-- Fabric 1.21.1：`super-disc-2.1.0-alpha.1+mc1.21.1-fabric.jar`，另装匹配的 Fabric API。
-- Fabric 26.2：`super-disc-2.1.0-alpha.1+mc26.2-fabric.jar`，另装匹配的 Fabric API。
+- Forge 1.20.1：`super-disc-2.1.0-alpha.2+mc1.20.1-forge.jar`
+- Forge 1.21.1：`super-disc-2.1.0-alpha.2+mc1.21.1-forge.jar`
+- NeoForge 1.21.1：`super-disc-2.1.0-alpha.2+mc1.21.1-neoforge.jar`
+- Fabric 1.21.1：`super-disc-2.1.0-alpha.2+mc1.21.1-fabric.jar`，另装匹配的 Fabric API。
+- Fabric 26.2：`super-disc-2.1.0-alpha.2+mc26.2-fabric.jar`，另装匹配的 Fabric API。
 
 JLayer MP3 解码库已内嵌，不需额外安装。不要同时装入多个平台包，也不要安装 sources 或开发中间包。
 本地构建的 Forge 安装包带有 `-all.jar` 后缀，详见 [构建文档](docs/BUILDING.md)。

@@ -18,14 +18,14 @@ Release 工作流要求标签提交是 `main` 的祖先。
 
 ```sh
 python -m unittest discover -s scripts -p 'test_*.py' -v
-python scripts/release.py validate v2.1.0-alpha.1
-python scripts/release.py prepare v2.1.0-alpha.1 --target forge-1.20.1 --output release/local/forge-1.20.1
-python scripts/release.py prepare v2.1.0-alpha.1 --target fabric-26.2 --output release/local/fabric-26.2
-python scripts/release.py prepare v2.1.0-alpha.1 --target forge-1.21.1 --output release/local/forge-1.21.1
-python scripts/release.py prepare v2.1.0-alpha.1 --target neoforge-1.21.1 --output release/local/neoforge-1.21.1
-python scripts/release.py prepare v2.1.0-alpha.1 --target fabric-1.21.1 --output release/local/fabric-1.21.1
-python scripts/release.py assemble v2.1.0-alpha.1 --inputs release/local --output release/assembled
-python scripts/release.py verify v2.1.0-alpha.1 --inputs release/assembled
+python scripts/release.py validate v2.1.0-alpha.2
+python scripts/release.py prepare v2.1.0-alpha.2 --target forge-1.20.1 --output release/local/forge-1.20.1
+python scripts/release.py prepare v2.1.0-alpha.2 --target fabric-26.2 --output release/local/fabric-26.2
+python scripts/release.py prepare v2.1.0-alpha.2 --target forge-1.21.1 --output release/local/forge-1.21.1
+python scripts/release.py prepare v2.1.0-alpha.2 --target neoforge-1.21.1 --output release/local/neoforge-1.21.1
+python scripts/release.py prepare v2.1.0-alpha.2 --target fabric-1.21.1 --output release/local/fabric-1.21.1
+python scripts/release.py assemble v2.1.0-alpha.2 --inputs release/local --output release/assembled
+python scripts/release.py verify v2.1.0-alpha.2 --inputs release/assembled
 ```
 
 输出目录存在时拒绝覆盖；重试使用新的目录，不混入历史包。

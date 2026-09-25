@@ -2,7 +2,9 @@
 import argparse
 import json
 import subprocess
+import time
 from pathlib import Path
+from urllib.parse import quote
 
 from release import require, verify_release
 
@@ -39,12 +41,20 @@ class GitHub:
     def assets(self, release_id):
         return self.pages(f"repos/{self.repo}/releases/{release_id}/assets")
 
+    def get_release(self, release_id):
+        return self.api(f"repos/{self.repo}/releases/{release_id}")
+
     def download(self, asset_id):
         return subprocess.run(["gh", "api", "-H", "Accept: application/octet-stream",
                                f"repos/{self.repo}/releases/assets/{asset_id}"], capture_output=True, check=True).stdout
 
-    def upload(self, tag, path):
-        subprocess.run(["gh", "release", "upload", tag, str(path), "--repo", self.repo], check=True)
+    def upload(self, release_id, path):
+        item = self.get_release(release_id)
+        require(item["draft"], "Refusing to upload to a published release")
+        url = item["upload_url"].split("{", 1)[0]
+        subprocess.run(["gh", "api", "--method", "POST", f"{url}?name={quote(path.name, safe='')}",
+                        "-H", "Content-Type: application/octet-stream", "--input", str(path)],
+                       capture_output=True, check=True)
 
 
 def check_draft(item, manifest, body):
@@ -70,15 +80,22 @@ def publish(api, tag, directory):
         require(api.download(asset["id"]) == (directory / name).read_bytes(), f"Different remote bytes: {name}")
     for name in manifest["files"]:
         if name not in existing:
-            current = [r for r in api.releases() if r["tag_name"] == tag]
-            require(len(current) == 1, "Release disappeared")
-            check_draft(current[0], manifest, body)
-            api.upload(tag, directory / name)
-    final = api.assets(item["id"])
-    require(len(final) == len(manifest["files"]) and {a["name"] for a in final} == set(manifest["files"]), "Incomplete remote draft")
+            # The list endpoint can lag behind creation; the returned ID is authoritative.
+            check_draft(api.get_release(item["id"]), manifest, body)
+            api.upload(item["id"], directory / name)
+    for attempt in range(6):
+        check_draft(api.get_release(item["id"]), manifest, body)
+        final = api.assets(item["id"])
+        names = {a["name"] for a in final}
+        require(len(names) == len(final) and names <= set(manifest["files"]), "Unexpected remote assets")
+        if names == set(manifest["files"]):
+            break
+        require(attempt < 5, "Incomplete remote draft")
+        # Successful list responses can briefly lag behind acknowledged uploads.
+        time.sleep(2 ** attempt)
     for asset in final:
         require(api.download(asset["id"]) == (directory / asset["name"]).read_bytes(), "Remote verification failed")
-    check_draft([r for r in api.releases() if r["tag_name"] == tag][0], manifest, body)
+    check_draft(api.get_release(item["id"]), manifest, body)
     print(f"Verified draft {tag}; all attachments match")
 
 
