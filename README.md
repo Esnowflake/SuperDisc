@@ -4,6 +4,16 @@
 
 ![超级唱片](src/main/resources/assets/super_disc/textures/item/super_disc.png)
 
+## 效果展示
+
+播放控制界面：
+
+![超级唱片播放控制界面，可调整进度、音量和防失真设置；本机路径已隐藏](assets/screenshots/playback-controls.png)
+
+创造模式物品栏：
+
+![创造模式工具与实用物品分类中的超级唱片](assets/screenshots/creative-inventory.png)
+
 ## 支持范围
 
 | Minecraft | 平台 | Java | 状态 |
