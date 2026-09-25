@@ -12,6 +12,7 @@
 
 权威模组版本位于根 `gradle.properties` 的 `mod_version`。
 平台定义位于 `scripts/targets.json`，CI 与 Release 读取同一矩阵。
+云端固定使用 Ubuntu 24.04，Actions 使用完整提交 SHA 固定的 Node 24 版本。
 Fabric 26.2 使用不混淆的游戏发行包，因此安装产物来自 Loom 的 `jar`，不套用旧版 Fabric 的 remap 流程。
 Forge 1.20.1 的 `build` 包含 `jarJar` 和 `reobfJarJar`。
 Forge 1.21.1 使用官方名称运行环境，不执行旧 SRG 重混淆；NeoForge 1.21.1 也使用官方名称。
